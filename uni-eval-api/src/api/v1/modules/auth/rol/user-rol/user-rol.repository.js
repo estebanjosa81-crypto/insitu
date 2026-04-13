@@ -111,9 +111,7 @@ class UserRolRepository {
 					where: { user_id: { in: userIds } },
 					select: {
 						user_id: true,
-						user_name: true,
 						user_username: true,
-						user_email: true,
 						user_idrole: true,
 						user_statusid: true,
 						role_name: true

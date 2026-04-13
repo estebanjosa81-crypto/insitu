@@ -8,20 +8,30 @@ class DataloginRepository {
   }
 
   // ---- Auth users (remote) ----
+  // Columnas confirmadas en sigedin_seguridad.datalogin
+  #safeSelect = {
+    user_id: true,
+    user_username: true,
+    user_password: true,
+    user_idrole: true,
+    user_statusid: true,
+    role_name: true
+  };
+
   findAll() {
-    return this.model.findMany();
+    return this.model.findMany({ select: this.#safeSelect });
   }
 
   findById(user_id) {
-    return this.model.findUnique({ where: { user_id } });
+    return this.model.findUnique({ where: { user_id }, select: this.#safeSelect });
   }
 
   findByUsername(user_username) {
-    return this.model.findFirst({ where: { user_username } });
+    return this.model.findFirst({ where: { user_username }, select: this.#safeSelect });
   }
 
   findAllByUsername(user_username) {
-    return this.model.findMany({ where: { user_username } });
+    return this.model.findMany({ where: { user_username }, select: this.#safeSelect });
   }
 
   async findLocalRolesByUserId(user_id) {

@@ -17,8 +17,6 @@ model datalogin {
   user_id       Int     @id @default(autoincrement())
   user_username String? @db.VarChar(100)
   user_password String? @db.VarChar(255)
-  user_nombre   String? @db.VarChar(255)
-  user_email    String? @db.VarChar(255)
   user_idrole   Int?
   user_statusid Int?
   role_name     String? @db.VarChar(255)

@@ -31,7 +31,7 @@ class RolRepository {
 	getAuthUserBasicById(userId) {
 		return this.authClient.datalogin.findUnique({
 			where: { user_id: userId },
-			select: { user_name: true, user_email: true }
+			select: { user_id: true, user_username: true }
 		});
 	}
 }
