@@ -136,6 +136,7 @@ services:
       - "5000:5000"
     networks:
       - eval-network
+      - dokploy-network
 
   # ---------------------------------------------------------------------------
   # FRONTEND (uni-eval-front — Next.js standalone)
@@ -162,6 +163,7 @@ services:
       - "3001:3000"
     networks:
       - eval-network
+      - dokploy-network
 
 # =============================================================================
 # VOLÚMENES
@@ -176,3 +178,5 @@ volumes:
 networks:
   eval-network:
     driver: bridge
+  dokploy-network:
+    external: true
