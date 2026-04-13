@@ -56,6 +56,39 @@ services:
       - eval-network
 
   # ---------------------------------------------------------------------------
+  # DB INIT — importa app.sql si la BD está vacía (funciona con volumen previo)
+  # Corre una sola vez y sale. El backend espera a que termine.
+  # ---------------------------------------------------------------------------
+  db-init:
+    image: mysql:8
+    restart: "no"
+    environment:
+      MYSQL_PWD: ${DB_ROOT_PASSWORD}
+    entrypoint:
+      - bash
+      - -c
+      - |
+        echo '⏳ Esperando MySQL...'
+        until mysqladmin ping -h mysql -uroot --silent 2>/dev/null; do sleep 2; done
+        echo '✅ MySQL listo'
+        TABLES=$$(mysql -h mysql -uroot -e \
+          "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='app';" \
+          -sN 2>/dev/null || echo 0)
+        if [ "$$TABLES" = "0" ] || [ -z "$$TABLES" ]; then
+          echo '📥 BD vacía — importando esquema...'
+          mysql -h mysql -uroot < /init/app.sql && echo '✅ Esquema importado.'
+        else
+          echo "✅ BD ya tiene $$TABLES tablas — omitiendo init."
+        fi
+    volumes:
+      - ./uni-eval-api/sql/init:/init:ro
+    depends_on:
+      mysql:
+        condition: service_healthy
+    networks:
+      - eval-network
+
+  # ---------------------------------------------------------------------------
   # BACKEND (uni-eval-api — Express + Prisma)
   # ---------------------------------------------------------------------------
   backend:
@@ -65,6 +98,9 @@ services:
       args:
         CACHEBUST: ${CACHEBUST:-1}
     restart: unless-stopped
+    depends_on:
+      db-init:
+        condition: service_completed_successfully
     environment:
       NODE_ENV: production
       PORT: 5000
