@@ -1,0 +1,152 @@
+# =============================================================================
+# docker-compose.dokploy.yml
+# Orquestación completa del proyecto para despliegue en Dokploy
+# =============================================================================
+# Configurar todas las variables en: Dokploy → Project → Environment Variables
+# =============================================================================
+
+services:
+
+  # ---------------------------------------------------------------------------
+  # BASE DE DATOS LOCAL (MySQL 8)
+  # ---------------------------------------------------------------------------
+  mysql:
+    image: mysql:8
+    restart: unless-stopped
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_spanish_ci
+    environment:
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${DB_NAME}
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - eval-network
+
+  # ---------------------------------------------------------------------------
+  # OLLAMA (LLM local — omitir si se usa OpenAI/Gemini)
+  # ---------------------------------------------------------------------------
+  ollama:
+    image: ollama/ollama:latest
+    restart: unless-stopped
+    volumes:
+      - ollama_data:/root/.ollama
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+      start_period: 30s
+    networks:
+      - eval-network
+
+  ollama-pull:
+    image: ollama/ollama:latest
+    restart: "no"
+    depends_on:
+      ollama:
+        condition: service_healthy
+    environment:
+      OLLAMA_HOST: http://ollama:11434
+    entrypoint: ["sh", "-c", "ollama pull ${LLM_MODEL}"]
+    networks:
+      - eval-network
+
+  # ---------------------------------------------------------------------------
+  # BACKEND (uni-eval-api — Express + Prisma)
+  # ---------------------------------------------------------------------------
+  backend:
+    build:
+      context: ./uni-eval-api
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      mysql:
+        condition: service_healthy
+      ollama:
+        condition: service_healthy
+      ollama-pull:
+        condition: service_completed_successfully
+    environment:
+      NODE_ENV: production
+      PORT: 5000
+
+      # --- Bases de datos ---
+      # Local (contenedor MySQL arriba)
+      DATABASE_URL: mysql://root:${DB_ROOT_PASSWORD}@mysql:3306/${DB_NAME}
+      # Bases de datos externas (sigedin)
+      DATABASE_URL_AUTH: ${DATABASE_URL_AUTH}
+      DATABASE_URL_USER: ${DATABASE_URL_USER}
+      DATABASE_URL_METRICAS: ${DATABASE_URL_METRICAS}
+
+      # --- Autenticación ---
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN}
+
+      # --- CORS ---
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS}
+
+      # --- Swagger / URLs internas ---
+      API_BASE_URL: ${API_BASE_URL}
+      API_SWAGGER_URL: ${API_BASE_URL}
+
+      # --- IA (Ollama) ---
+      OLLAMA_HOST: http://ollama:11434
+      LLM_MODEL: ${LLM_MODEL}
+
+      # --- Debug ---
+      VALIDATION_DEBUG: ${VALIDATION_DEBUG:-false}
+    ports:
+      - "5000:5000"
+    networks:
+      - eval-network
+
+  # ---------------------------------------------------------------------------
+  # FRONTEND (uni-eval-front — Next.js standalone)
+  # IMPORTANTE: NEXT_PUBLIC_* se embeben en el bundle durante el build.
+  # Cambiar NEXT_PUBLIC_API_URL requiere reconstruir la imagen.
+  # ---------------------------------------------------------------------------
+  frontend:
+    build:
+      context: ./uni-eval-front
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL}
+        NEXT_PUBLIC_API_TIMEOUT: ${NEXT_PUBLIC_API_TIMEOUT:-30000}
+        NEXT_PUBLIC_RETRY_ATTEMPTS: ${NEXT_PUBLIC_RETRY_ATTEMPTS:-3}
+        NEXT_PUBLIC_RETRY_DELAY: ${NEXT_PUBLIC_RETRY_DELAY:-1000}
+    restart: unless-stopped
+    depends_on:
+      - backend
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL}
+      NEXT_PUBLIC_API_TIMEOUT: ${NEXT_PUBLIC_API_TIMEOUT:-30000}
+      NEXT_PUBLIC_RETRY_ATTEMPTS: ${NEXT_PUBLIC_RETRY_ATTEMPTS:-3}
+      NEXT_PUBLIC_RETRY_DELAY: ${NEXT_PUBLIC_RETRY_DELAY:-1000}
+    ports:
+      - "3000:3000"
+    networks:
+      - eval-network
+
+# =============================================================================
+# VOLÚMENES
+# =============================================================================
+volumes:
+  mysql_data:
+  ollama_data:
+
+# =============================================================================
+# RED
+# =============================================================================
+networks:
+  eval-network:
+    driver: bridge
