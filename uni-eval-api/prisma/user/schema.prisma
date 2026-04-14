@@ -26,7 +26,7 @@ model vista_academica_insitus {
   NOM_PROGRAMA   String? @db.VarChar(255)
   SEMESTRE       String? @db.VarChar(10)
   GRUPO          String  @db.VarChar(50)
-  COD_ASIGNATURA String  @db.VarChar(20)
+  COD_ASIGNATURA Int
 
   @@id([ID_ESTUDIANTE, ID_DOCENTE, COD_ASIGNATURA, GRUPO])
   @@map("vista_academica_insitus")
