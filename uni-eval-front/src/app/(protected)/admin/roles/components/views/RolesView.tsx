@@ -20,8 +20,8 @@ export function RolesView({
 }: RolesViewProps) {
   const [searchTerm, setSearchTerm] = useState("");
 
-  const filteredRoles = roles.filter(rol => 
-    rol.nombre.toLowerCase().includes(searchTerm.toLowerCase())
+  const filteredRoles = roles.filter(rol =>
+    rol.nombre?.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
   return (
