@@ -624,6 +624,277 @@ async function generateDocxReport({
     return doc.getZip().generate({ type: 'nodebuffer' });
 }
 
+/**
+ * Obtiene todos los docentes de un programa con sus métricas y análisis IA cacheado.
+ * Retorna rankings de mejores y con más aspectos de mejora.
+ */
+async function getReportePrograma(query) {
+    const { localPrisma } = require('../../../../prisma/clients');
+    const cfgId = Number(query.cfg_t);
+    if (!cfgId) throw new Error('cfg_t es requerido');
+
+    // Todos los docentes del programa (sin paginación límite alto)
+    const docentesResult = await repo.getAllDocentesStats(
+        { ...query, page: 1, limit: 200 },
+        {},
+        { sortBy: 'promedio_general', sortOrder: 'desc' }
+    );
+    const docentes = docentesResult.data || [];
+    const docenteIds = docentes.map(d => d.docente).filter(Boolean);
+
+    // Obtener análisis IA cacheado de cmt_ai para todos los docentes
+    let cmtAiAll = [];
+    if (docenteIds.length) {
+        try {
+            cmtAiAll = await localPrisma.cmt_ai.findMany({
+                where: { cfg_t_id: cfgId, docente: { in: docenteIds } },
+                select: { docente: true, conclusion_gen: true, fortaleza: true, debilidad: true }
+            });
+        } catch (err) {
+            if (String(err?.message || '').includes('Unknown argument `docente`')) {
+                cmtAiAll = await localPrisma.cmt_ai.findMany({
+                    where: { cfg_t_id: cfgId },
+                    select: { conclusion_gen: true, fortaleza: true, debilidad: true }
+                });
+            } else throw err;
+        }
+    }
+
+    // Agrupar AI por docente
+    const aiByDocente = new Map();
+    for (const rec of cmtAiAll) {
+        const docId = rec.docente;
+        if (!docId) continue;
+        const existing = aiByDocente.get(docId) || { fortalezas: new Set(), debilidades: new Set(), conclusion_gen: null };
+        if (rec.conclusion_gen && !existing.conclusion_gen) existing.conclusion_gen = rec.conclusion_gen;
+        const forts = parseJsonSafe(rec.fortaleza, []);
+        const debs = parseJsonSafe(rec.debilidad, []);
+        forts.forEach(f => { if (f) existing.fortalezas.add(f); });
+        debs.forEach(d => { if (d) existing.debilidades.add(d); });
+        aiByDocente.set(docId, existing);
+    }
+
+    // Combinar docentes con IA
+    const docentesConAI = docentes.map(d => {
+        const ai = aiByDocente.get(d.docente);
+        return {
+            ...d,
+            ai_analisis: ai ? {
+                conclusion_gen: ai.conclusion_gen,
+                fortalezas: Array.from(ai.fortalezas),
+                debilidades: Array.from(ai.debilidades),
+                tiene_analisis: true
+            } : { fortalezas: [], debilidades: [], conclusion_gen: null, tiene_analisis: false }
+        };
+    });
+
+    // Aspectos agregados del programa
+    const aspectoData = await repo.getDocenteAspectMetrics(query);
+
+    // Rankings
+    const conPuntaje = docentesConAI.filter(d => d.promedio_general != null);
+    const mejoresDocentes = [...conPuntaje]
+        .sort((a, b) => (b.promedio_general || 0) - (a.promedio_general || 0))
+        .slice(0, 5);
+    const docentesConMejora = [...conPuntaje]
+        .sort((a, b) => (a.promedio_general || 0) - (b.promedio_general || 0))
+        .slice(0, 5);
+
+    return {
+        programa: query.programa || 'Todos los programas',
+        total_docentes: docentes.length,
+        docentes: docentesConAI,
+        aspectos: aspectoData,
+        rankings: {
+            mejores_docentes: mejoresDocentes,
+            docentes_con_mejora: docentesConMejora
+        }
+    };
+}
+
+/**
+ * Reporte consolidado: agrupa programas por sede (o todos si no se filtra por sede).
+ * Incluye top docentes y docentes con aspectos de mejora por programa.
+ */
+async function getReporteConsolidado(query) {
+    const { localPrisma } = require('../../../../prisma/clients');
+    const cfgId = Number(query.cfg_t);
+    if (!cfgId) throw new Error('cfg_t es requerido');
+
+    // Obtener resumen por programas
+    const { programas } = await repo.getEvaluationSummaryByProgram(query);
+
+    // Para cada programa, obtener top docentes
+    const programasConDocentes = await Promise.all(
+        programas.map(async (prog) => {
+            try {
+                const docentesResult = await repo.getAllDocentesStats(
+                    { ...query, programa: prog.nombre, page: 1, limit: 100 },
+                    {},
+                    { sortBy: 'promedio_general', sortOrder: 'desc' }
+                );
+                const docentes = docentesResult.data || [];
+
+                // AI cacheada
+                const docenteIds = docentes.map(d => d.docente).filter(Boolean);
+                let cmtAiAll = [];
+                if (docenteIds.length) {
+                    try {
+                        cmtAiAll = await localPrisma.cmt_ai.findMany({
+                            where: { cfg_t_id: cfgId, docente: { in: docenteIds } },
+                            select: { docente: true, conclusion_gen: true, fortaleza: true, debilidad: true }
+                        });
+                    } catch (err) {
+                        if (!String(err?.message || '').includes('Unknown argument `docente`')) throw err;
+                    }
+                }
+
+                const aiByDocente = new Map();
+                for (const rec of cmtAiAll) {
+                    if (!rec.docente) continue;
+                    const ex = aiByDocente.get(rec.docente) || { fortalezas: new Set(), debilidades: new Set(), conclusion_gen: null };
+                    if (rec.conclusion_gen && !ex.conclusion_gen) ex.conclusion_gen = rec.conclusion_gen;
+                    parseJsonSafe(rec.fortaleza, []).forEach(f => { if (f) ex.fortalezas.add(f); });
+                    parseJsonSafe(rec.debilidad, []).forEach(d => { if (d) ex.debilidades.add(d); });
+                    aiByDocente.set(rec.docente, ex);
+                }
+
+                const docentesConAI = docentes.map(d => ({
+                    ...d,
+                    ai_analisis: (() => {
+                        const ai = aiByDocente.get(d.docente);
+                        return ai ? {
+                            conclusion_gen: ai.conclusion_gen,
+                            fortalezas: Array.from(ai.fortalezas),
+                            debilidades: Array.from(ai.debilidades),
+                            tiene_analisis: true
+                        } : { fortalezas: [], debilidades: [], conclusion_gen: null, tiene_analisis: false };
+                    })()
+                }));
+
+                const conPuntaje = docentesConAI.filter(d => d.promedio_general != null);
+                const promedio_programa = conPuntaje.length
+                    ? conPuntaje.reduce((s, d) => s + (d.promedio_general || 0), 0) / conPuntaje.length
+                    : null;
+
+                return {
+                    ...prog,
+                    promedio_programa: promedio_programa != null ? Number(promedio_programa.toFixed(2)) : null,
+                    total_docentes: docentes.length,
+                    docentes: docentesConAI,
+                    mejores_docentes: [...conPuntaje].sort((a, b) => (b.promedio_general || 0) - (a.promedio_general || 0)).slice(0, 3),
+                    docentes_con_mejora: [...conPuntaje].sort((a, b) => (a.promedio_general || 0) - (b.promedio_general || 0)).slice(0, 3)
+                };
+            } catch {
+                return { ...prog, promedio_programa: null, total_docentes: 0, docentes: [], mejores_docentes: [], docentes_con_mejora: [] };
+            }
+        })
+    );
+
+    return {
+        sede: query.sede || 'Todas las sedes',
+        programas: programasConDocentes
+    };
+}
+
+/**
+ * Reporte institucional: agrega todas las sedes con sus programas y métricas globales.
+ */
+async function getReporteInstitucional(query) {
+    const { userPrisma, localPrisma } = require('../../../../prisma/clients');
+    const cfgId = Number(query.cfg_t);
+    if (!cfgId) throw new Error('cfg_t es requerido');
+
+    // Obtener todas las sedes disponibles
+    const sedesRaw = await userPrisma.vista_academica_insitus.findMany({
+        where: query.periodo ? { PERIODO: query.periodo } : {},
+        select: { NOMBRE_SEDE: true },
+        distinct: ['NOMBRE_SEDE']
+    });
+    const sedes = sedesRaw.map(s => s.NOMBRE_SEDE).filter(Boolean);
+
+    // Resumen global sin filtro de sede
+    const globalSummary = await repo.getEvaluationSummaryByProgram({ ...query });
+
+    // Para cada sede, obtener sus programas y métricas
+    const sedesData = await Promise.all(
+        sedes.map(async (sede) => {
+            const { programas } = await repo.getEvaluationSummaryByProgram({ ...query, sede });
+            const docentesResult = await repo.getAllDocentesStats(
+                { ...query, sede, page: 1, limit: 200 },
+                {},
+                { sortBy: 'promedio_general', sortOrder: 'desc' }
+            );
+            const docentes = docentesResult.data || [];
+            const conPuntaje = docentes.filter(d => d.promedio_general != null);
+            const promedio_sede = conPuntaje.length
+                ? Number((conPuntaje.reduce((s, d) => s + (d.promedio_general || 0), 0) / conPuntaje.length).toFixed(2))
+                : null;
+
+            // AI para top/bottom
+            const docenteIds = conPuntaje.map(d => d.docente).filter(Boolean);
+            let cmtAiAll = [];
+            if (docenteIds.length) {
+                try {
+                    cmtAiAll = await localPrisma.cmt_ai.findMany({
+                        where: { cfg_t_id: cfgId, docente: { in: docenteIds } },
+                        select: { docente: true, conclusion_gen: true, fortaleza: true, debilidad: true }
+                    });
+                } catch (err) {
+                    if (!String(err?.message || '').includes('Unknown argument `docente`')) throw err;
+                }
+            }
+            const aiByDocente = new Map();
+            for (const rec of cmtAiAll) {
+                if (!rec.docente) continue;
+                const ex = aiByDocente.get(rec.docente) || { fortalezas: new Set(), debilidades: new Set(), conclusion_gen: null };
+                if (rec.conclusion_gen && !ex.conclusion_gen) ex.conclusion_gen = rec.conclusion_gen;
+                parseJsonSafe(rec.fortaleza, []).forEach(f => { if (f) ex.fortalezas.add(f); });
+                parseJsonSafe(rec.debilidad, []).forEach(d => { if (d) ex.debilidades.add(d); });
+                aiByDocente.set(rec.docente, ex);
+            }
+            const docentesConAI = conPuntaje.map(d => ({
+                ...d,
+                ai_analisis: (() => {
+                    const ai = aiByDocente.get(d.docente);
+                    return ai ? { conclusion_gen: ai.conclusion_gen, fortalezas: Array.from(ai.fortalezas), debilidades: Array.from(ai.debilidades), tiene_analisis: true }
+                        : { fortalezas: [], debilidades: [], conclusion_gen: null, tiene_analisis: false };
+                })()
+            }));
+
+            return {
+                sede,
+                promedio_sede,
+                total_docentes: docentes.length,
+                total_programas: programas.length,
+                programas,
+                mejores_docentes: [...docentesConAI].sort((a, b) => (b.promedio_general || 0) - (a.promedio_general || 0)).slice(0, 3),
+                docentes_con_mejora: [...docentesConAI].sort((a, b) => (a.promedio_general || 0) - (b.promedio_general || 0)).slice(0, 3)
+            };
+        })
+    );
+
+    // Aspectos globales
+    const aspectoData = await repo.getDocenteAspectMetrics(query);
+
+    // Top/bottom global
+    const allDocentesResult = await repo.getAllDocentesStats(
+        { ...query, page: 1, limit: 300 },
+        {},
+        { sortBy: 'promedio_general', sortOrder: 'desc' }
+    );
+    const allDocentes = (allDocentesResult.data || []).filter(d => d.promedio_general != null);
+
+    return {
+        sedes: sedesData,
+        total_programas: globalSummary.programas.length,
+        total_docentes: allDocentes.length,
+        aspectos: aspectoData,
+        mejores_docentes_institucional: allDocentes.slice(0, 5),
+        docentes_con_mejora_institucional: [...allDocentes].sort((a, b) => (a.promedio_general || 0) - (b.promedio_general || 0)).slice(0, 5)
+    };
+}
+
 module.exports = {
     evaluationSummary,
     evaluationSummaryByProgram,
@@ -635,4 +906,7 @@ module.exports = {
     docenteComments,
     docenteCommentsAnalysis,
     generateDocxReport,
+    getReportePrograma,
+    getReporteConsolidado,
+    getReporteInstitucional,
 };

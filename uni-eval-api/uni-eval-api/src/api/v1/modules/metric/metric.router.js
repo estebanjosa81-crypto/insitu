@@ -47,4 +47,16 @@ router.get('/evaluations/docente/:docente/comments/analysis', ctrl.docenteCommen
 // ai_mode=none => genera reporte sin conclusiones IA; cached (default) => usa cmt_ai si existe
 router.get('/evaluations/docente/:docente/report.docx', ctrl.docenteReportDocx);
 
+// GET /metric/evaluations/reporte/programa?cfg_t=1&programa=...&periodo=...
+// Reporte detallado por programa: todos los docentes con métricas + AI cacheado + rankings
+router.get('/evaluations/reporte/programa', ctrl.reportePrograma);
+
+// GET /metric/evaluations/reporte/consolidado?cfg_t=1&sede=...&periodo=...
+// Reporte consolidado por sede/facultad: programas con métricas + top/bottom docentes
+router.get('/evaluations/reporte/consolidado', ctrl.reporteConsolidado);
+
+// GET /metric/evaluations/reporte/institucional?cfg_t=1&periodo=...
+// Reporte institucional: todas las sedes con métricas + aspectos globales + rankings
+router.get('/evaluations/reporte/institucional', ctrl.reporteInstitucional);
+
 module.exports = router;
