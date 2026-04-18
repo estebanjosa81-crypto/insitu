@@ -19,19 +19,24 @@ import {
   Brain,
   AlertCircle,
   CheckCircle2,
-  Clock,
   Award,
   FileDown,
+  GraduationCap,
+  Building2,
+  Globe,
+  User,
 } from "lucide-react";
 import Filtros from "@/src/app/(protected)/admin/components/filters";
 import { metricService } from "@/src/api/services/metric/metric.service";
 import type {
   DocenteGeneralMetrics,
-  DocenteAspectosMetrics,
   CommentsAnalysisResponse,
   MetricFilters,
 } from "@/src/api/services/metric/metric.service";
 import type { FiltrosState } from "../types";
+import ReportePorPrograma from "./components/ReportePorPrograma";
+import ReporteConsolidado from "./components/ReporteConsolidado";
+import ReporteInstitucional from "./components/ReporteInstitucional";
 
 const FiltersMemo = memo(Filtros);
 
@@ -292,11 +297,25 @@ function AIAnalysisPanel({ docente, filtros }: AIAnalysisPanelProps) {
 }
 
 // ============================================================================
+// Tab definitions
+// ============================================================================
+
+type TabId = "docente" | "programa" | "consolidado" | "institucional";
+
+const TABS: { id: TabId; label: string; icon: React.ElementType; description: string }[] = [
+  { id: "docente", label: "Por Docente", icon: User, description: "Análisis individual con IA" },
+  { id: "programa", label: "Por Programa", icon: GraduationCap, description: "Todos los docentes de un programa" },
+  { id: "consolidado", label: "Consolidado", icon: Building2, description: "Programas agrupados por sede" },
+  { id: "institucional", label: "Institucional", icon: Globe, description: "Vista global de todas las sedes" },
+];
+
+// ============================================================================
 // Página principal
 // ============================================================================
 
 export default function ReportesPage() {
   const { toast } = useToast();
+  const [activeTab, setActiveTab] = useState<TabId>("docente");
 
   const [filtros, setFiltros] = useState<FiltrosState>({
     configuracionSeleccionada: null,
@@ -361,9 +380,12 @@ export default function ReportesPage() {
   );
 
   useEffect(() => {
-    cargarDocentes(1, searchTerm);
+    if (activeTab === "docente") {
+      cargarDocentes(1, searchTerm);
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
+    activeTab,
     filtros.configuracionSeleccionada,
     filtros.sedeSeleccionada,
     filtros.periodoSeleccionado,
@@ -374,6 +396,7 @@ export default function ReportesPage() {
 
   // Debounce búsqueda
   useEffect(() => {
+    if (activeTab !== "docente") return;
     const timer = setTimeout(() => {
       if (filtros.configuracionSeleccionada) {
         cargarDocentes(1, searchTerm);
@@ -499,153 +522,203 @@ export default function ReportesPage() {
             </p>
           </div>
         ) : (
-          <div className="grid grid-cols-1 xl:grid-cols-[1fr_480px] gap-8 items-start animate-in fade-in duration-700">
-            {/* Panel izquierdo: lista de docentes */}
-            <div className="space-y-5">
-              <div className="flex items-center gap-3 px-1">
-                <FileText className="h-4 w-4 text-indigo-600" />
-                <h3 className="text-xs font-medium text-muted-foreground">
-                  Seleccionar Docente para Reporte
-                </h3>
-              </div>
+          <div className="space-y-6 animate-in fade-in duration-700">
+            {/* Tabs */}
+            <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-1.5 flex gap-1 overflow-x-auto">
+              {TABS.map((tab) => {
+                const Icon = tab.icon;
+                const isActive = activeTab === tab.id;
+                return (
+                  <button
+                    key={tab.id}
+                    onClick={() => setActiveTab(tab.id)}
+                    className={`flex items-center gap-2.5 px-4 py-2.5 rounded-xl text-sm font-semibold transition-all duration-200 flex-shrink-0 ${
+                      isActive
+                        ? "bg-slate-900 text-white shadow-lg"
+                        : "text-slate-500 hover:bg-slate-50 hover:text-slate-700"
+                    }`}
+                  >
+                    <Icon className="w-4 h-4" />
+                    <span>{tab.label}</span>
+                    {isActive && (
+                      <span className="hidden sm:block text-[10px] font-normal opacity-60">
+                        {tab.description}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
 
-              {/* Buscador */}
-              <div className="relative group">
-                <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 group-focus-within:text-indigo-600 transition-colors" />
-                <Input
-                  placeholder="Buscar por nombre o identificación..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  disabled={loading}
-                  className="pl-11 h-12 bg-white border-slate-200 focus:border-slate-300 rounded-2xl transition-all duration-300 font-medium"
-                />
-              </div>
+            {/* Tab content */}
+            {activeTab === "docente" && (
+              <div className="grid grid-cols-1 xl:grid-cols-[1fr_480px] gap-8 items-start">
+                {/* Panel izquierdo: lista de docentes */}
+                <div className="space-y-5">
+                  <div className="flex items-center gap-3 px-1">
+                    <FileText className="h-4 w-4 text-indigo-600" />
+                    <h3 className="text-xs font-medium text-muted-foreground">
+                      Seleccionar Docente para Reporte
+                    </h3>
+                  </div>
 
-              {/* Lista de docentes */}
-              <div className="bg-white rounded-[2rem] border-2 border-slate-100 shadow-sm overflow-hidden">
-                {loading ? (
-                  <div className="divide-y divide-slate-50">
-                    {[...Array(8)].map((_, i) => (
-                      <div key={i} className="flex items-center gap-4 px-6 py-4">
-                        <Skeleton className="h-11 w-11 rounded-xl flex-shrink-0" />
-                        <div className="flex-1 space-y-1.5">
-                          <Skeleton className="h-4 w-48" />
-                          <Skeleton className="h-3 w-24" />
-                        </div>
-                        <Skeleton className="h-6 w-20 rounded-full" />
-                        <Skeleton className="h-8 w-8 rounded-xl" />
-                      </div>
-                    ))}
+                  {/* Buscador */}
+                  <div className="relative group">
+                    <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 group-focus-within:text-indigo-600 transition-colors" />
+                    <Input
+                      placeholder="Buscar por nombre o identificación..."
+                      value={searchTerm}
+                      onChange={(e) => setSearchTerm(e.target.value)}
+                      disabled={loading}
+                      className="pl-11 h-12 bg-white border-slate-200 focus:border-slate-300 rounded-2xl transition-all duration-300 font-medium"
+                    />
                   </div>
-                ) : docentes.length === 0 ? (
-                  <div className="py-24 text-center">
-                    <div className="p-8 rounded-[2.5rem] bg-slate-50 w-fit mx-auto mb-4 border border-slate-100">
-                      <Users className="w-10 h-10 text-slate-200" />
-                    </div>
-                    <p className="text-lg font-black text-slate-900 italic">Sin resultados</p>
-                    <p className="text-xs text-slate-400 mt-1">
-                      No se encontraron docentes con los filtros actuales.
-                    </p>
-                  </div>
-                ) : (
-                  <div className="divide-y divide-slate-50">
-                    {docentes.map((doc) => {
-                      const status = getStatusConfig(doc);
-                      const isSelected = selectedDocente?.docente === doc.docente;
-                      return (
-                        <button
-                          key={doc.docente}
-                          onClick={() => setSelectedDocente(isSelected ? null : doc)}
-                          className={`w-full flex items-center gap-4 px-6 py-4 text-left transition-all duration-200 group ${
-                            isSelected
-                              ? "bg-indigo-50/80 border-l-4 border-l-indigo-500"
-                              : "hover:bg-slate-50/70 border-l-4 border-l-transparent"
-                          }`}
-                        >
-                          <div
-                            className={`w-11 h-11 rounded-xl flex items-center justify-center font-black text-lg flex-shrink-0 transition-transform duration-300 group-hover:scale-110 ${
-                              isSelected
-                                ? "bg-gradient-to-br from-indigo-100 to-blue-100 border border-indigo-200 text-indigo-600"
-                                : "bg-gradient-to-br from-slate-50 to-slate-100 border border-slate-200 text-slate-600"
-                            }`}
-                          >
-                            {doc.nombre_docente?.charAt(0) || "D"}
-                            {doc.porcentaje_cumplimiento === 100 && (
-                              <Award className="absolute -top-1 -right-1 w-3 h-3 text-emerald-500" />
-                            )}
+
+                  {/* Lista de docentes */}
+                  <div className="bg-white rounded-[2rem] border-2 border-slate-100 shadow-sm overflow-hidden">
+                    {loading ? (
+                      <div className="divide-y divide-slate-50">
+                        {[...Array(8)].map((_, i) => (
+                          <div key={i} className="flex items-center gap-4 px-6 py-4">
+                            <Skeleton className="h-11 w-11 rounded-xl flex-shrink-0" />
+                            <div className="flex-1 space-y-1.5">
+                              <Skeleton className="h-4 w-48" />
+                              <Skeleton className="h-3 w-24" />
+                            </div>
+                            <Skeleton className="h-6 w-20 rounded-full" />
+                            <Skeleton className="h-8 w-8 rounded-xl" />
                           </div>
-                          <div className="flex-1 min-w-0">
-                            <p
-                              className={`font-bold text-sm truncate ${
-                                isSelected ? "text-indigo-900" : "text-slate-900"
+                        ))}
+                      </div>
+                    ) : docentes.length === 0 ? (
+                      <div className="py-24 text-center">
+                        <div className="p-8 rounded-[2.5rem] bg-slate-50 w-fit mx-auto mb-4 border border-slate-100">
+                          <Users className="w-10 h-10 text-slate-200" />
+                        </div>
+                        <p className="text-lg font-black text-slate-900 italic">Sin resultados</p>
+                        <p className="text-xs text-slate-400 mt-1">
+                          No se encontraron docentes con los filtros actuales.
+                        </p>
+                      </div>
+                    ) : (
+                      <div className="divide-y divide-slate-50">
+                        {docentes.map((doc) => {
+                          const status = getStatusConfig(doc);
+                          const isSelected = selectedDocente?.docente === doc.docente;
+                          return (
+                            <button
+                              key={doc.docente}
+                              onClick={() => setSelectedDocente(isSelected ? null : doc)}
+                              className={`w-full flex items-center gap-4 px-6 py-4 text-left transition-all duration-200 group ${
+                                isSelected
+                                  ? "bg-indigo-50/80 border-l-4 border-l-indigo-500"
+                                  : "hover:bg-slate-50/70 border-l-4 border-l-transparent"
                               }`}
                             >
-                              {doc.nombre_docente || "Sin nombre"}
-                            </p>
-                            <p className="text-[10px] font-mono text-slate-400 mt-0.5">
-                              ID: {doc.docente}
-                            </p>
-                          </div>
-                          <Badge
-                            variant="outline"
-                            className={`rounded-full border text-[10px] px-2 py-0.5 flex-shrink-0 ${status.color}`}
-                          >
-                            {status.label}
-                          </Badge>
-                          <span
-                            className={`text-base font-black italic flex-shrink-0 w-10 text-right ${getScoreColor(
-                              doc.promedio_general
-                            )}`}
-                          >
-                            {doc.promedio_general ? doc.promedio_general.toFixed(1) : "—"}
-                          </span>
-                        </button>
-                      );
-                    })}
+                              <div
+                                className={`w-11 h-11 rounded-xl flex items-center justify-center font-black text-lg flex-shrink-0 transition-transform duration-300 group-hover:scale-110 ${
+                                  isSelected
+                                    ? "bg-gradient-to-br from-indigo-100 to-blue-100 border border-indigo-200 text-indigo-600"
+                                    : "bg-gradient-to-br from-slate-50 to-slate-100 border border-slate-200 text-slate-600"
+                                }`}
+                              >
+                                {doc.nombre_docente?.charAt(0) || "D"}
+                                {doc.porcentaje_cumplimiento === 100 && (
+                                  <Award className="absolute -top-1 -right-1 w-3 h-3 text-emerald-500" />
+                                )}
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <p
+                                  className={`font-bold text-sm truncate ${
+                                    isSelected ? "text-indigo-900" : "text-slate-900"
+                                  }`}
+                                >
+                                  {doc.nombre_docente || "Sin nombre"}
+                                </p>
+                                <p className="text-[10px] font-mono text-slate-400 mt-0.5">
+                                  ID: {doc.docente}
+                                </p>
+                              </div>
+                              <Badge
+                                variant="outline"
+                                className={`rounded-full border text-[10px] px-2 py-0.5 flex-shrink-0 ${status.color}`}
+                              >
+                                {status.label}
+                              </Badge>
+                              <span
+                                className={`text-base font-black italic flex-shrink-0 w-10 text-right ${getScoreColor(
+                                  doc.promedio_general
+                                )}`}
+                              >
+                                {doc.promedio_general ? doc.promedio_general.toFixed(1) : "—"}
+                              </span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
                   </div>
-                )}
+
+                  {/* Paginación */}
+                  {pagination.pages > 1 && (
+                    <div className="flex items-center justify-between px-4 py-3 bg-slate-50/50 rounded-3xl border border-slate-100">
+                      <p className="text-xs font-medium text-muted-foreground hidden sm:block">
+                        {pagination.total} docentes · página {pagination.page}/{pagination.pages}
+                      </p>
+                      <div className="flex items-center gap-1 mx-auto sm:mx-0">
+                        {renderPaginationButtons()}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Panel derecho: análisis del docente seleccionado */}
+                <div className="space-y-5 xl:sticky xl:top-24">
+                  <div className="flex items-center gap-3 px-1">
+                    <Sparkles className="h-4 w-4 text-indigo-600" />
+                    <h3 className="text-xs font-medium text-muted-foreground">
+                      Análisis y Exportación
+                    </h3>
+                  </div>
+
+                  {selectedDocente ? (
+                    <div className="bg-white rounded-[2rem] border-2 border-slate-100 shadow-sm p-6">
+                      <AIAnalysisPanel docente={selectedDocente} filtros={filtros} />
+                    </div>
+                  ) : (
+                    <div className="bg-white rounded-[2rem] border-2 border-slate-100 shadow-sm p-10 text-center">
+                      <div className="h-16 w-16 bg-indigo-50 rounded-2xl flex items-center justify-center mx-auto mb-4 border border-indigo-100">
+                        <FileText className="h-8 w-8 text-indigo-300" />
+                      </div>
+                      <p className="text-sm font-semibold text-slate-700 mb-1">
+                        Selecciona un docente
+                      </p>
+                      <p className="text-xs text-slate-400 leading-relaxed">
+                        Elige un docente de la lista para generar su reporte DOCX o iniciar el análisis con IA.
+                      </p>
+                    </div>
+                  )}
+                </div>
               </div>
+            )}
 
-              {/* Paginación */}
-              {pagination.pages > 1 && (
-                <div className="flex items-center justify-between px-4 py-3 bg-slate-50/50 rounded-3xl border border-slate-100">
-                  <p className="text-xs font-medium text-muted-foreground hidden sm:block">
-                    {pagination.total} docentes · página {pagination.page}/{pagination.pages}
-                  </p>
-                  <div className="flex items-center gap-1 mx-auto sm:mx-0">
-                    {renderPaginationButtons()}
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* Panel derecho: análisis del docente seleccionado */}
-            <div className="space-y-5 xl:sticky xl:top-24">
-              <div className="flex items-center gap-3 px-1">
-                <Sparkles className="h-4 w-4 text-indigo-600" />
-                <h3 className="text-xs font-medium text-muted-foreground">
-                  Análisis y Exportación
-                </h3>
+            {activeTab === "programa" && (
+              <div className="bg-white rounded-[2rem] border-2 border-slate-100 shadow-sm p-6">
+                <ReportePorPrograma filters={metricFilters} />
               </div>
+            )}
 
-              {selectedDocente ? (
-                <div className="bg-white rounded-[2rem] border-2 border-slate-100 shadow-sm p-6">
-                  <AIAnalysisPanel docente={selectedDocente} filtros={filtros} />
-                </div>
-              ) : (
-                <div className="bg-white rounded-[2rem] border-2 border-slate-100 shadow-sm p-10 text-center">
-                  <div className="h-16 w-16 bg-indigo-50 rounded-2xl flex items-center justify-center mx-auto mb-4 border border-indigo-100">
-                    <FileText className="h-8 w-8 text-indigo-300" />
-                  </div>
-                  <p className="text-sm font-semibold text-slate-700 mb-1">
-                    Selecciona un docente
-                  </p>
-                  <p className="text-xs text-slate-400 leading-relaxed">
-                    Elige un docente de la lista para generar su reporte DOCX o iniciar el análisis con IA.
-                  </p>
-                </div>
-              )}
-            </div>
+            {activeTab === "consolidado" && (
+              <div className="bg-white rounded-[2rem] border-2 border-slate-100 shadow-sm p-6">
+                <ReporteConsolidado filters={metricFilters} />
+              </div>
+            )}
+
+            {activeTab === "institucional" && (
+              <div className="bg-white rounded-[2rem] border-2 border-slate-100 shadow-sm p-6">
+                <ReporteInstitucional filters={metricFilters} />
+              </div>
+            )}
           </div>
         )}
       </main>

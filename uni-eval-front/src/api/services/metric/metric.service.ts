@@ -884,6 +884,33 @@ export const metricService = {
   },
 
   /**
+   * Reporte por programa: todos los docentes con métricas + AI cacheado + rankings
+   */
+  getReportePrograma: async (filters: MetricFilters): Promise<ReporteProgramaResponse> => {
+    const params = buildMetricParams(filters);
+    const response = await httpClient.get(`/metric/evaluations/reporte/programa?${params.toString()}`);
+    return (response as { data?: ReporteProgramaResponse }).data ?? (response as ReporteProgramaResponse);
+  },
+
+  /**
+   * Reporte consolidado: programas agrupados por sede con top/bottom docentes
+   */
+  getReporteConsolidado: async (filters: MetricFilters): Promise<ReporteConsolidadoResponse> => {
+    const params = buildMetricParams(filters);
+    const response = await httpClient.get(`/metric/evaluations/reporte/consolidado?${params.toString()}`);
+    return (response as { data?: ReporteConsolidadoResponse }).data ?? (response as ReporteConsolidadoResponse);
+  },
+
+  /**
+   * Reporte institucional: todas las sedes con métricas + rankings globales
+   */
+  getReporteInstitucional: async (filters: MetricFilters): Promise<ReporteInstitucionalResponse> => {
+    const params = buildMetricParams(filters);
+    const response = await httpClient.get(`/metric/evaluations/reporte/institucional?${params.toString()}`);
+    return (response as { data?: ReporteInstitucionalResponse }).data ?? (response as ReporteInstitucionalResponse);
+  },
+
+  /**
    * Helper: Descargar reporte DOCX automáticamente
    */
   downloadDocenteReportToFile: async (
@@ -906,6 +933,62 @@ export const metricService = {
     document.body.removeChild(a);
   },
 };
+
+// ========================
+// REPORT TYPES
+// ========================
+
+export interface DocenteConAI extends DocenteGeneralMetrics {
+  ai_analisis: {
+    conclusion_gen: string | null;
+    fortalezas: string[];
+    debilidades: string[];
+    tiene_analisis: boolean;
+  };
+}
+
+export interface ReporteProgramaResponse {
+  programa: string;
+  total_docentes: number;
+  docentes: DocenteConAI[];
+  aspectos: DocenteAspectosMetrics;
+  rankings: {
+    mejores_docentes: DocenteConAI[];
+    docentes_con_mejora: DocenteConAI[];
+  };
+}
+
+export interface ProgramaConDocentes extends ProgramaSummary {
+  promedio_programa: number | null;
+  total_docentes: number;
+  docentes: DocenteConAI[];
+  mejores_docentes: DocenteConAI[];
+  docentes_con_mejora: DocenteConAI[];
+}
+
+export interface ReporteConsolidadoResponse {
+  sede: string;
+  programas: ProgramaConDocentes[];
+}
+
+export interface SedeData {
+  sede: string;
+  promedio_sede: number | null;
+  total_docentes: number;
+  total_programas: number;
+  programas: ProgramaSummary[];
+  mejores_docentes: DocenteConAI[];
+  docentes_con_mejora: DocenteConAI[];
+}
+
+export interface ReporteInstitucionalResponse {
+  sedes: SedeData[];
+  total_programas: number;
+  total_docentes: number;
+  aspectos: DocenteAspectosMetrics;
+  mejores_docentes_institucional: DocenteGeneralMetrics[];
+  docentes_con_mejora_institucional: DocenteGeneralMetrics[];
+}
 
 // ========================
 // EXPORTS

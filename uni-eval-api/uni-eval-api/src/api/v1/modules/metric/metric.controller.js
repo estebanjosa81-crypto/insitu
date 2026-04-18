@@ -135,6 +135,33 @@ async function docenteReportDocx(req, res, next) {
 	}
 }
 
+async function reportePrograma(req, res, next) {
+	try {
+		const data = await service.getReportePrograma(req.query);
+		successResponse(res, { code: 200, message: messages.DASHBOARD.SUCCESS.FETCH_STATS, data });
+	} catch (err) {
+		next(err);
+	}
+}
+
+async function reporteConsolidado(req, res, next) {
+	try {
+		const data = await service.getReporteConsolidado(req.query);
+		successResponse(res, { code: 200, message: messages.DASHBOARD.SUCCESS.FETCH_STATS, data });
+	} catch (err) {
+		next(err);
+	}
+}
+
+async function reporteInstitucional(req, res, next) {
+	try {
+		const data = await service.getReporteInstitucional(req.query);
+		successResponse(res, { code: 200, message: messages.DASHBOARD.SUCCESS.FETCH_STATS, data });
+	} catch (err) {
+		next(err);
+	}
+}
+
 module.exports = {
 	summary,
 	summaryByProgram,
@@ -146,4 +173,7 @@ module.exports = {
 	docenteComments,
 	docenteCommentsAnalysis,
 	docenteReportDocx,
+	reportePrograma,
+	reporteConsolidado,
+	reporteInstitucional,
 };
